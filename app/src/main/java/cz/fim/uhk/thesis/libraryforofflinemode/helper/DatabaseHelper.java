@@ -9,6 +9,9 @@ import android.database.sqlite.SQLiteOpenHelper;
 
 import org.jetbrains.annotations.Nullable;
 
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+
 import cz.fim.uhk.thesis.libraryforofflinemode.model.User;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
@@ -57,10 +60,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         contentValues.put("user_is_online", user.isOnline());
         contentValues.put("user_actual_state", user.getActualState());
         contentValues.put("user_future_state", user.getFutureState());
-        contentValues.put("user_first_conn_to_server", user.getFirstConnectionToServer().toString());
-        contentValues.put("user_last_conn_to_server", user.getLastConnectionToServer().toString());
-        contentValues.put("user_sensor_information_temperature", user.getSensorInformation().getTemperature());
-        contentValues.put("user_sensor_information_pressure", user.getSensorInformation().getPressure());
+        DateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm");
+        contentValues.put("user_first_conn_to_server", format.format(user.getFirstConnectionToServer()));
+        contentValues.put("user_last_conn_to_server", format.format(user.getLastConnectionToServer()));
+        contentValues.put("user_sensor_information_temperature", user.getTemperature());
+        contentValues.put("user_sensor_information_pressure", user.getPressure());
         long result = db.insert(TABLE_NAME,null ,contentValues);
         return result != -1;
     }
@@ -77,8 +81,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         contentValues.put("user_future_state", user.getFutureState());
         contentValues.put("user_first_conn_to_server", user.getFirstConnectionToServer().toString());
         contentValues.put("user_last_conn_to_server", user.getLastConnectionToServer().toString());
-        contentValues.put("user_sensor_information_temperature", user.getSensorInformation().getTemperature());
-        contentValues.put("user_sensor_information_pressure", user.getSensorInformation().getPressure());
+        contentValues.put("user_sensor_information_temperature", user.getTemperature());
+        contentValues.put("user_sensor_information_pressure", user.getPressure());
         db.update(TABLE_NAME, contentValues, "user_id = ?", new String[]{String.valueOf(user.getSsid())});
         return true;
     }

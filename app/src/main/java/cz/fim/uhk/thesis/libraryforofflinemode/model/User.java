@@ -19,7 +19,24 @@ public class User {
 
     private Date lastConnectionToServer;
 
-    private SensorInformation sensorInformation;
+    private double temperature;
+
+    private double pressure;
+
+    public User(String ssid, double latitude, double longitude, boolean isOnline,
+                String actualState, String futureState, Date firstConnectionToServer,
+                Date lastConnectionToServer, double temperature, double pressure) {
+        this.ssid = ssid;
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.isOnline = isOnline;
+        this.actualState = actualState;
+        this.futureState = futureState;
+        this.firstConnectionToServer = firstConnectionToServer;
+        this.lastConnectionToServer = lastConnectionToServer;
+        this.temperature = temperature;
+        this.pressure = pressure;
+    }
 
     public String getSsid() {
         return ssid;
@@ -53,7 +70,7 @@ public class User {
         return lastConnectionToServer;
     }
 
-    public SensorInformation getSensorInformation() {
-        return sensorInformation;
-    }
+    public double getTemperature() { return temperature; }
+
+    public double getPressure() { return pressure; }
 }

@@ -5,7 +5,7 @@ import android.content.Context;
 import java.util.List;
 
 public interface LibraryLoaderInterface {
-    int start(String path, Context context, List<?> clients);
+    int start(String path, Context context);
 
     int stop();
 

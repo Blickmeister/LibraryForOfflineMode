@@ -1,6 +1,7 @@
 package cz.fim.uhk.thesis.libraryforofflinemode;
 
 import android.content.Context;
+import android.database.Cursor;
 import android.util.Log;
 
 import com.google.gson.Gson;
@@ -8,7 +9,11 @@ import com.google.gson.GsonBuilder;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.Serializable;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Scanner;
 
@@ -22,7 +27,7 @@ import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
-public class MainClass implements LibraryLoaderInterface {
+public class MainClass implements LibraryLoaderInterface, Serializable {
 
     private static final String TAG = "LibraryOfflineMain";
     private static final String PATH_TO_DESC = "/LibraryForOfflineMode/descriptor.txt";
@@ -34,8 +39,8 @@ public class MainClass implements LibraryLoaderInterface {
     private int exitResult;
 
     @Override
-    public int start(String path, Context context, List<?> clients) {
-        Log.d(TAG,"Knihovna startuje");
+    public int start(String path, Context context) {
+        Log.d(TAG, "Knihovna startuje");
         try {
             this.libraryPathInApp = path;
             this.appContext = context;
@@ -53,13 +58,11 @@ public class MainClass implements LibraryLoaderInterface {
             // naplnění těl metod prostřednictvím retrofit objektu
             centralServerApi = retrofit.create(CentralServerApi.class);
 
-            // init db
+            // init db a seznam klientů
             myDb = new DatabaseHelper(context);
-            List<User> users = (List<User>) clients;
-            for(User user : users) {
-                myDb.insertData(user);
-            }
-            Log.d(TAG,"Knihovna spuštěna");
+            users = new ArrayList<>();
+
+            Log.d(TAG, "Knihovna spuštěna");
             return 0;
         } catch (Exception ex) {
             Log.e(TAG, "knihovnu se nepodařilo spustit: " + ex.getMessage());
@@ -85,11 +88,10 @@ public class MainClass implements LibraryLoaderInterface {
         // opětovné spuštění činnosti knihovny
         // synchronizace db
         try {
-            List<User> users = (List<User>) clients;
-            for(User user : users) {
+            for (User user : users) {
                 myDb.insertData(user);
             }
-            Log.d(TAG,"knihovna opětovně spuštěna");
+            Log.d(TAG, "knihovna opětovně spuštěna");
             return 0;
         } catch (Exception ex) {
             Log.e(TAG, "knihovnu se nepodařilo opětovně spustit: " + ex.getMessage());
@@ -134,6 +136,7 @@ public class MainClass implements LibraryLoaderInterface {
         List<String> data = new ArrayList<>();
         // získání dat z txt
         String pathToFile = libraryPathInApp + PATH_TO_DESC;
+        Log.d(TAG, "Cesta k descriptor.txt: " + pathToFile);
         Scanner myReader = null;
         try {
             myReader = new Scanner(new File(pathToFile));
@@ -152,9 +155,9 @@ public class MainClass implements LibraryLoaderInterface {
     // metoda pro aktualizaci db knihovny
     public void actualizeDatabase(List<?> clients) {
         List<User> usersToActualize = (List<User>) clients;
-        for(User user : usersToActualize) {
+        for (User user : usersToActualize) {
             // kontrola zda klient existuje v db
-            if(myDb.getUserById(user.getSsid()) != null) {
+            if (myDb.getUserById(user.getSsid()) != null) {
                 // ano -> update v db
                 myDb.updateUser(user);
             } else {
@@ -166,6 +169,52 @@ public class MainClass implements LibraryLoaderInterface {
 
     // pro předání dat z db knihovny do aplikace
     public List<User> getUsers() {
+        // získání dat z databáze
+        Cursor result = myDb.getAllData();
+        // naplnění seznamu klientů pro předání do aplikace
+        if (result.getCount() != 0) {
+            Log.d(TAG, "SSID klientů v knihovně: ");
+            while (result.moveToNext()) {
+                try {
+                    String id = result.getString(0);
+                    double lat = result.getDouble(1);
+                    double lng = result.getDouble(2);
+                    int isOnlineInt = result.getInt(3);
+                    boolean isOnline = isOnlineInt == 1;
+                    String actState = result.getString(4);
+                    String futState = result.getString(5);
+                    String firstConnStr = result.getString(6);
+                    Date firstConn = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm").parse(firstConnStr);
+                    String lastConnStr = result.getString(7);
+                    Date lastConn = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm").parse(lastConnStr);
+                    double temp = result.getDouble(8);
+                    double pres = result.getDouble(9);
+                    User user = new User(id, lat, lng, isOnline, actState, futState, firstConn, lastConn,
+                            temp, pres);
+                    users.add(user);
+                } catch (Exception e) {
+                    Log.e(TAG, "Nepodařilo se uložit klienta do seznamu klientů: ");
+                    e.printStackTrace();
+                }
+                for(User user : users) {
+                    Log.d(TAG, "USER ID: " + user.getSsid());
+                }
+            }
+        } else {
+            Log.d(TAG, "V DB offline knihovny není žádný klient");
+        }
         return users;
+    }
+
+    // pro získání dat z aplikace (seznam klientů ze serveru)
+    public int addUser(String id, Double latitude, Double longitude, Boolean isOnline, String actualState,
+                        String futureState, Date firstConnectionToServer, Date lastConnectionToServer,
+                        Double temperature, Double pressure) {
+        User user = new User(id, latitude, longitude, isOnline, actualState, futureState, firstConnectionToServer,
+                lastConnectionToServer, temperature, pressure);
+        // uložení klienta ze serveru do DB
+        if (myDb.insertData(user)) return 0;
+        else return -1;
+
     }
 }
