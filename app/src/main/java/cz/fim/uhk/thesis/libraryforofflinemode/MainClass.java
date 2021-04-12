@@ -9,12 +9,11 @@ import com.google.gson.GsonBuilder;
 
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.Serializable;
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Scanner;
 
 import cz.fim.uhk.thesis.libraryforofflinemode.api.CentralServerApi;
@@ -27,7 +26,15 @@ import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
-public class MainClass implements LibraryLoaderInterface, Serializable {
+/**
+ * @author Bc. Ondřej Schneider - FIM UHK
+ * @version 1.0
+ * @since 2021-04-06
+ * Knihovna realizující roli klienta v offline režimu
+ * Především persistentní ukládání seznamu klientů do DB a manipulace s daty v DB
+ * hlavní (řídící) třída knihovny
+ */
+public class MainClass implements LibraryLoaderInterface {
 
     private static final String TAG = "LibraryOfflineMain";
     private static final String PATH_TO_DESC = "/LibraryForOfflineMode/descriptor.txt";
@@ -36,7 +43,6 @@ public class MainClass implements LibraryLoaderInterface, Serializable {
     private String libraryPathInApp;
     private Context appContext;
     private CentralServerApi centralServerApi;
-    private int exitResult;
 
     @Override
     public int start(String path, Context context) {
@@ -73,9 +79,11 @@ public class MainClass implements LibraryLoaderInterface, Serializable {
     @Override
     public int stop() {
         // uvolnění prostředků knihovny
-        // smazání obsahu db
+        // vzhledem k činnosti knihovny v rámci funkcí IS zde není nutné nic implementovat
+        // smazání DB jakožto jedniného prostředku, který knihovna využívá by nedávalo smysl
         try {
-            myDb.dropTable();
+            // pro ukázku
+            users = null;
             return 0;
         } catch (Exception ex) {
             Log.e(TAG, "knihovnu se nepodařilo zastavit: " + ex.getMessage());
@@ -84,55 +92,78 @@ public class MainClass implements LibraryLoaderInterface, Serializable {
     }
 
     @Override
-    public int resume(List<?> clients) { // nevim esi je nutny ten parametr - muzu si ukladat do data do tridy tady klidne ze startu
+    public int resume(String path, Context context) {
         // opětovné spuštění činnosti knihovny
-        // synchronizace db
+        // implementace jako v metodě start() při prvotním zavedení
+        Log.d(TAG, "Knihovna znovu startuje");
         try {
-            for (User user : users) {
-                myDb.insertData(user);
-            }
-            Log.d(TAG, "knihovna opětovně spuštěna");
+            this.libraryPathInApp = path;
+            this.appContext = context;
+            // init komunikace se serverem pro synchronizaci
+            // nastavení gson converteru (JSON -> Java) pro Date formát
+            Gson gson = new GsonBuilder()
+                    .setDateFormat("yyyy-MM-dd'T'HH:mm")
+                    .create();
+            // init a nastavení retrofit objektu pro připojení k serveru
+            Retrofit retrofit = new Retrofit.Builder()
+                    .baseUrl("http://10.0.2.2:8080/") // localhost alias pro AVD
+                    .addConverterFactory(GsonConverterFactory.create(gson))
+                    .build();
+
+            // naplnění těl metod prostřednictvím retrofit objektu
+            centralServerApi = retrofit.create(CentralServerApi.class);
+
+            // init db a seznam klientů
+            myDb = new DatabaseHelper(context);
+            users = new ArrayList<>();
+
+            Log.d(TAG, "Knihovna znovu spuštěna");
             return 0;
         } catch (Exception ex) {
-            Log.e(TAG, "knihovnu se nepodařilo opětovně spustit: " + ex.getMessage());
+            Log.e(TAG, "knihovnu se nepodařilo znovu spustit: " + ex.getMessage());
             return 1;
         }
     }
 
     @Override
     public int exit() {
-        exitResult = 1;
-        // uvolnění prostředků knihovny - smazání db
-        appContext.deleteDatabase(myDb.getDatabaseName());
-        // synchronizace se serverem - poslání dat na server
-        // request na server
-        Call<ResponseBody> call = centralServerApi.sendUsers(users);
-        // zpracování response ze serveru
-        // metoda enqueue zajistí, aby zpracovaní proběhlo na nově vytvořeném background vlákně
+        try {
+            // uvolnění prostředků knihovny - smazání db
+            appContext.deleteDatabase(myDb.getDatabaseName());
+            // synchronizace se serverem - poslání dat na server
+            // request na server
+            Call<ResponseBody> call = centralServerApi.sendUsers(users);
+            // zpracování response ze serveru
+            // metoda enqueue zajistí, aby zpracovaní proběhlo na nově vytvořeném background vlákně
         call.enqueue(new Callback<ResponseBody>() {
             @Override
             public void onResponse(Call<ResponseBody> call, Response<ResponseBody> response) {
                 // kontrola zda response je neúspěšný
                 if (!response.isSuccessful()) {
                     // zobrazíme chybový HTTP kód a message a návrat z metody
+                    Log.e(TAG, "Synchronizace se serverem se nepodařila: ");
                     Log.e(TAG, "HTTP kód: " + response.code() + "Message: " + response.message());
                     return;
                 }
                 // vše proběhlo jak mělo
-                Log.d(TAG, "Synchronizace proběhla úspěšně");
-                exitResult = 0;
+                Log.d(TAG, "Synchronizace se serverem proběhla úspěšně");
             }
 
             @Override
             public void onFailure(Call<ResponseBody> call, Throwable t) {
-                Log.e(TAG, "Synchronizace se nepodařila. Chybová hláška: " + t.getMessage());
+                Log.e(TAG, "Synchronizace se serverem se nepodařila. Chybová hláška: " + t.getMessage());
             }
         });
-        return exitResult;
+        } catch (Exception ex) {
+            Log.e(TAG, "Metoda exit() selhala: " + ex.getMessage());
+            return 1;
+        }
+        return 0;
     }
 
     @Override
     public String getDescription() {
+        // pro získání popisu knihovny z jejího deskriptoru umístěném v uložišti klienta
         List<String> data = new ArrayList<>();
         // získání dat z txt
         String pathToFile = libraryPathInApp + PATH_TO_DESC;
@@ -152,22 +183,7 @@ public class MainClass implements LibraryLoaderInterface, Serializable {
         return data.get(4);
     }
 
-    // metoda pro aktualizaci db knihovny
-    public void actualizeDatabase(List<?> clients) {
-        List<User> usersToActualize = (List<User>) clients;
-        for (User user : usersToActualize) {
-            // kontrola zda klient existuje v db
-            if (myDb.getUserById(user.getSsid()) != null) {
-                // ano -> update v db
-                myDb.updateUser(user);
-            } else {
-                // ne -> vložení nového do db
-                myDb.insertData(user);
-            }
-        }
-    }
-
-    // pro předání dat z db knihovny do aplikace
+    // metoda pro předání dat z db knihovny do aplikace
     public List<User> getUsers() {
         // získání dat z databáze
         Cursor result = myDb.getAllData();
@@ -184,9 +200,17 @@ public class MainClass implements LibraryLoaderInterface, Serializable {
                     String actState = result.getString(4);
                     String futState = result.getString(5);
                     String firstConnStr = result.getString(6);
-                    Date firstConn = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm").parse(firstConnStr);
+                    Date firstConn = null;
+                    if(firstConnStr != null) {
+                        firstConn = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm",
+                                Locale.getDefault()).parse(firstConnStr);
+                    }
                     String lastConnStr = result.getString(7);
-                    Date lastConn = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm").parse(lastConnStr);
+                    Date lastConn = null;
+                    if(lastConnStr != null) {
+                        lastConn = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm",
+                                Locale.getDefault()).parse(lastConnStr);
+                    }
                     double temp = result.getDouble(8);
                     double pres = result.getDouble(9);
                     User user = new User(id, lat, lng, isOnline, actState, futState, firstConn, lastConn,
@@ -196,9 +220,10 @@ public class MainClass implements LibraryLoaderInterface, Serializable {
                     Log.e(TAG, "Nepodařilo se uložit klienta do seznamu klientů: ");
                     e.printStackTrace();
                 }
-                for(User user : users) {
-                    Log.d(TAG, "USER ID: " + user.getSsid());
-                }
+            }
+            // výpis klientů pro kontrolu
+            for(User user : users) {
+                Log.d(TAG, "USER ID: " + user.getSsid());
             }
         } else {
             Log.d(TAG, "V DB offline knihovny není žádný klient");
@@ -206,15 +231,48 @@ public class MainClass implements LibraryLoaderInterface, Serializable {
         return users;
     }
 
-    // pro získání dat z aplikace (seznam klientů ze serveru)
+    // metoda pro získání dat z aplikace (seznam klientů ze serveru)
     public int addUser(String id, Double latitude, Double longitude, Boolean isOnline, String actualState,
                         String futureState, Date firstConnectionToServer, Date lastConnectionToServer,
                         Double temperature, Double pressure) {
         User user = new User(id, latitude, longitude, isOnline, actualState, futureState, firstConnectionToServer,
                 lastConnectionToServer, temperature, pressure);
-        // uložení klienta ze serveru do DB
-        if (myDb.insertData(user)) return 0;
-        else return -1;
+        // kontrola zda klient již není v DB dle jeho SSID
+       if(userExists(user.getSsid())) {
+           // již je v DB -> update záznamu - mohlo dojít k aktualizaci stavu klienta
+           if (myDb.updateUser(user)) {
+               Log.d(TAG, "update data!");
+               return 0;
+           }
+           else return 1;
+       } else {
+           // uložení klienta ze serveru do DB
+           if (myDb.insertData(user)) {
+               Log.d(TAG, "insert data!");
+               return 0;
+           }
+           else return 1;
+       }
+    }
 
+    // metoda pro kontrolu zda je klient už v uložišti preš seznam klientů v db
+    private boolean userExists(String id) {
+        // získání dat z databáze
+        Cursor result = myDb.getAllData();
+        if (result.getCount() == 0) {
+            return false;
+        }
+        // získání ssid z DB
+        List<String> userIdes = new ArrayList<>();
+        while (result.moveToNext()) {
+            userIdes.add(result.getString(0));
+        }
+        // kontrola zda daný klient je již v seznamu, tudíž v uložišti
+        for (String userId : userIdes) {
+            if (userId.equals(id)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -2,7 +2,6 @@ package cz.fim.uhk.thesis.libraryforofflinemode.helper;
 
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
@@ -11,9 +10,16 @@ import org.jetbrains.annotations.Nullable;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.Locale;
 
 import cz.fim.uhk.thesis.libraryforofflinemode.model.User;
 
+/**
+ * @author Bc. Ondřej Schneider - FIM UHK
+ * @version 1.0
+ * @since 2021-04-06
+ * Databázový modul
+ */
 public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "user_management.db";
@@ -44,24 +50,20 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         onCreate(db);
     }
 
-    public boolean dropTable() {
-        SQLiteDatabase db = this.getWritableDatabase();
-        db.execSQL("DROP TABLE IF EXISTS user");
-        return true;
-    }
-
+    // metoda pro vkládání dat do DB
     public boolean insertData(User user) {
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues contentValues = new ContentValues();
         contentValues.put("user_id", user.getSsid());
         contentValues.put("user_latitude", user.getLatitude());
         contentValues.put("user_longitude", user.getLongitude());
-        // int isOnlineForDb = usCon.isOnline() ? 1 : 0;
         contentValues.put("user_is_online", user.isOnline());
         contentValues.put("user_actual_state", user.getActualState());
         contentValues.put("user_future_state", user.getFutureState());
-        DateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm");
+        DateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.getDefault());
+        if(user.getFirstConnectionToServer() != null)
         contentValues.put("user_first_conn_to_server", format.format(user.getFirstConnectionToServer()));
+        if(user.getLastConnectionToServer() != null)
         contentValues.put("user_last_conn_to_server", format.format(user.getLastConnectionToServer()));
         contentValues.put("user_sensor_information_temperature", user.getTemperature());
         contentValues.put("user_sensor_information_pressure", user.getPressure());
@@ -69,35 +71,29 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return result != -1;
     }
 
+    // metoda pro update záznamu v DB
     public boolean updateUser(User user) {
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues contentValues = new ContentValues();
-        contentValues.put("user_id", user.getSsid());
         contentValues.put("user_latitude", user.getLatitude());
         contentValues.put("user_longitude", user.getLongitude());
-        // int isOnlineForDb = usCon.isOnline() ? 1 : 0;
         contentValues.put("user_is_online", user.isOnline());
         contentValues.put("user_actual_state", user.getActualState());
         contentValues.put("user_future_state", user.getFutureState());
-        contentValues.put("user_first_conn_to_server", user.getFirstConnectionToServer().toString());
-        contentValues.put("user_last_conn_to_server", user.getLastConnectionToServer().toString());
+        DateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.getDefault());
+        if(user.getFirstConnectionToServer() != null)
+        contentValues.put("user_first_conn_to_server", format.format(user.getFirstConnectionToServer()));
+        if(user.getLastConnectionToServer() != null)
+        contentValues.put("user_last_conn_to_server", format.format(user.getLastConnectionToServer()));
         contentValues.put("user_sensor_information_temperature", user.getTemperature());
         contentValues.put("user_sensor_information_pressure", user.getPressure());
-        db.update(TABLE_NAME, contentValues, "user_id = ?", new String[]{String.valueOf(user.getSsid())});
-        return true;
+        long result = db.update(TABLE_NAME, contentValues, "user_id = ?", new String[]{user.getSsid()});
+        return result != -1;
     }
 
+    // metoda pro získání všech klientů z DB
     public Cursor getAllData() {
         SQLiteDatabase db = this.getWritableDatabase();
         return db.rawQuery("select * from " + TABLE_NAME,null);
     }
-
-    public Cursor getUserById(String id) {
-        SQLiteDatabase db = this.getWritableDatabase();
-        Cursor res = db.rawQuery("select * from " + TABLE_NAME + " where user_id = '"+ id + "'",
-                null);
-        res.moveToFirst(); // user_id je unikátní (vždy jen jeden výsledek)
-        return res;
-    }
-
 }
